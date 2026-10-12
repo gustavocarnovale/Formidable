@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historial Formidable</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #10b981;
+      --accent-hover: #059669;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --border: #334155;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 16px;
+    }
+    h1 { margin: 0; font-size: 1.8rem; color: var(--accent); letter-spacing: 1px; }
+    .controls { display: flex; gap: 12px; align-items: center; }
+    select, button {
+      background-color: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button {
+      background-color: var(--accent);
+      color: #000;
+      border: none;
+    }
+    button:hover { background-color: var(--accent-hover); }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 24px; }
+    .card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid var(--border); }
+    h2, h3 { font-size: 1.2rem; margin-top: 0; margin-bottom: 16px; color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; text-align: left; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+    tr:last-child td { border-bottom: none; }
+    
+    /* Filas de la tabla interactiva */
+    .player-row { cursor: pointer; transition: background 0.15s ease; }
+    .player-row:hover { background-color: #334155; }
+
+    .badge-game { background: #3b82f6; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+    .badge-date { background: #334155; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
+    .win { color: #34d399; font-weight: bold; }
+    .draw { color: #fbbf24; }
+
+    /* ESTILOS DEL MODAL */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 700px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 24px;
+      position: relative;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .modal-close {
+      position: absolute;
+      top: 16px; right: 20px;
+      font-size: 1.8rem;
+      color: var(--text-dim);
+      cursor: pointer;
+      line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+
+    /* Cajas destacadas dentro del Modal */
+    .fav-team-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .fav-team-title { font-size: 0.85rem; color: var(--text-dim); text-transform: uppercase; }
+    .fav-team-name { font-size: 1.3rem; font-weight: bold; color: var(--accent); }
+    
+    .vs-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      background: var(--bg);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .vs-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+      gap: 10px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .vs-stat-box {
+      background: var(--bg);
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .vs-stat-box .num { font-size: 1.3rem; font-weight: bold; color: var(--accent); }
+    .vs-stat-box .lbl { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>HISTORIAL MULTIJUEGOS</h1>
+      <div class="controls">
+        <label for="filtro-juego">Filtrar por juego:</label>
+        <select id="filtro-juego" onchange="renderizarSegunFiltro()">
+          <option value="TODOS">Todos los Juegos</option>
+        </select>
+        <button onclick="cargarDatos()">Actualizar</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Tabla General de Jugadores <span style="font-size:0.8rem; color:var(--text-dim); font-weight:normal;">(Haz clic en un jugador para ver detalles)</span></h2>
+        <table id="tabla-jugadores">
+          <thead>
+            <tr>
+              <th>Jugador</th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>PF</th><th>PTS</th>
+            </tr>
+          </thead>
+          <tbody><!-- Dinámico --></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Últimos 6 Partidos</h2>
+      <table id="tabla-partidos">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Juego</th><th>Local</th><th>Resultado</th><th>Visita</th>
+          </tr>
+        </thead>
+        <tbody><!-- Dinámico --></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODAL DE ESTADÍSTICAS DEL JUGADOR -->
+  <div id="modal-jugador" class="modal-overlay" onclick="cerrarModalAfuera(event)">
+    <div class="modal-content">
+      <span class="modal-close" onclick="cerrarModal()">&times;</span>
+      <h2 id="modal-titulo-jugador" style="margin-bottom: 16px;">Jugador</h2>
+
+      <!-- Equipo / Personaje Favorito -->
+      <div class="fav-team-card">
+        <div>
+          <div class="fav-team-title">Equipo / Personaje más elegido</div>
+          <div id="modal-fav-nombre" class="fav-team-name">-</div>
+        </div>
+        <div id="modal-fav-stats" style="text-align: right; font-size: 0.9rem; color: var(--text-dim);">
+          -
+        </div>
+      </div>
+
+      <!-- Sección Historial VS -->
+      <h3>Historial Frente a Frente (VS)</h3>
+      <div class="vs-controls">
+        <label for="select-rival">Seleccionar Rival:</label>
+        <select id="select-rival" onchange="actualizarVS()"></select>
+      </div>
+
+      <!-- Cuadros de estadísticas VS -->
+      <div class="vs-stats-grid">
+        <div class="vs-stat-box">
+          <div id="vs-pj" class="num">0</div>
+          <div class="lbl">Partidos</div>
+        </div>
+        <div class="vs-stat-box">
+          <div id="vs-pg" class="num" style="color:#34d399;">0</div>
+          <div class="lbl">Victorias</div>
+        </div>
+        <div class="vs-stat-box">
+          <div id="vs-pe" class="num" style="color:#fbbf24;">0</div>
+          <div class="lbl">Empates</div>
+        </div>
+        <div class="vs-stat-box">
+          <div id="vs-pp" class="num" style="color:#f87171;">0</div>
+          <div class="lbl">Derrotas</div>
+        </div>
+        <div class="vs-stat-box">
+          <div id="vs-pf" class="num">0</div>
+          <div class="lbl">Puntos / GF</div>
+        </div>
+      </div>
+
+      <h4 style="margin-top: 16px; margin-bottom: 8px; color: var(--text-dim);">Enfrentamientos Directos</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Juego</th><th>Local</th><th>Res.</th><th>Visita</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-vs-body"><!-- Dinámico --></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // REEMPLAZA ESTE LINK CON TU ENLACE PUBLICADO EN FORMATO CSV DE GOOGLE SHEETS
+    const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRj0eWcMN3BOi5qNHbUEpzbW78cN0R9yuvzhDskiav2cprxDvYxnVIiq-5AI4DsgFVXxozRLhKr7xzR/pub?output=csv";
+
+    let datosGlobales = [];
+    let partidosFiltradosActuales = [];
+    let statsJugadoresGlobal = {};
+    let jugadorActivo = null;
+
+    async function cargarDatos() {
+      try {
+        const res = await fetch(SHEET_CSV_URL + '&t=' + new Date().getTime());
+        const dataText = await res.text();
+        
+        Papa.parse(dataText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            datosGlobales = results.data;
+            poblarSelectorJuegos(datosGlobales);
+            renderizarSegunFiltro();
+          }
+        });
+      } catch (err) {
+        console.error("Error al cargar datos:", err);
+      }
+    }
+
+    function poblarSelectorJuegos(partidos) {
+      const select = document.getElementById('filtro-juego');
+      const juegoSeleccionadoPrevio = select.value;
+      const juegosUnicos = [...new Set(partidos.map(p => p['Juego']?.trim()).filter(Boolean))];
+
+      select.innerHTML = '<option value="TODOS">Todos los Juegos</option>';
+      juegosUnicos.forEach(juego => {
+        const option = document.createElement('option');
+        option.value = juego;
+        option.textContent = juego;
+        select.appendChild(option);
+      });
+
+      if (juegosUnicos.includes(juegoSeleccionadoPrevio)) {
+        select.value = juegoSeleccionadoPrevio;
+      }
+    }
+
+    function renderizarSegunFiltro() {
+      const juegoFiltrado = document.getElementById('filtro-juego').value;
+      partidosFiltradosActuales = juegoFiltrado === "TODOS" 
+        ? datosGlobales 
+        : datosGlobales.filter(p => p['Juego']?.trim() === juegoFiltrado);
+
+      procesarEInsertar(partidosFiltradosActuales);
+    }
+
+    function procesarEInsertar(partidos) {
+      statsJugadoresGlobal = {};
+      let listaPartidosHtml = '';
+      let contadorPartidos = 0;
+
+      // Invertir lista para procesar de los más recientes a más antiguos
+      const partidosReversos = [...partidos].reverse();
+
+      partidosReversos.forEach(p => {
+        const juego = p['Juego']?.trim() || 'General';
+        const j1 = p['Jugador 1']?.trim();
+        const j2 = p['Jugador 2']?.trim();
+        const eq1 = p['Equipo/Personaje 1']?.trim();
+        const eq2 = p['Equipo/Personaje 2']?.trim();
+        const pts1 = parseInt(p['Puntos 1']) || 0;
+        const pts2 = parseInt(p['Puntos 2']) || 0;
+        const fecha = p['Fecha'] || '-';
+
+        if (!j1 || !j2) return;
+
+        // 1. Acumular estadísticas generales de todos los partidos cargados
+        [j1, j2].forEach(j => {
+          if (!statsJugadoresGlobal[j]) {
+            statsJugadoresGlobal[j] = { 
+              pj: 0, pg: 0, pe: 0, pp: 0, pf: 0, pc: 0, pts: 0,
+              equipos: {} 
+            };
+          }
+        });
+
+        const registrarEquipo = (jugador, equipo, gano) => {
+          if (!equipo) return;
+          const eqMap = statsJugadoresGlobal[jugador].equipos;
+          if (!eqMap[equipo]) eqMap[equipo] = { uso: 0, pg: 0 };
+          eqMap[equipo].uso++;
+          if (gano) eqMap[equipo].pg++;
+        };
+
+        statsJugadoresGlobal[j1].pj++;
+        statsJugadoresGlobal[j2].pj++;
+        statsJugadoresGlobal[j1].pf += pts1; statsJugadoresGlobal[j1].pc += pts2;
+        statsJugadoresGlobal[j2].pf += pts2; statsJugadoresGlobal[j2].pc += pts1;
+
+        if (pts1 > pts2) {
+          statsJugadoresGlobal[j1].pg++; statsJugadoresGlobal[j1].pts += 3;
+          statsJugadoresGlobal[j2].pp++;
+          registrarEquipo(j1, eq1, true);
+          registrarEquipo(j2, eq2, false);
+        } else if (pts2 > pts1) {
+          statsJugadoresGlobal[j2].pg++; statsJugadoresGlobal[j2].pts += 3;
+          statsJugadoresGlobal[j1].pp++;
+          registrarEquipo(j1, eq1, false);
+          registrarEquipo(j2, eq2, true);
+        } else {
+          statsJugadoresGlobal[j1].pe++; statsJugadoresGlobal[j1].pts += 1;
+          statsJugadoresGlobal[j2].pe++; statsJugadoresGlobal[j2].pts += 1;
+          registrarEquipo(j1, eq1, false);
+          registrarEquipo(j2, eq2, false);
+        }
+
+        // 2. Construir la tabla inferior limitando el resultado a 6 partidos como máximo
+        if (contadorPartidos < 6) {
+          listaPartidosHtml += `
+            <tr>
+              <td><span class="badge-date">${fecha}</span></td>
+              <td><span class="badge-game">${juego}</span></td>
+              <td><strong>${j1}</strong> ${eq1 ? `(${eq1})` : ''}</td>
+              <td style="text-align: center;"><strong>${pts1} - ${pts2}</strong></td>
+              <td><strong>${j2}</strong> ${eq2 ? `(${eq2})` : ''}</td>
+            </tr>`;
+          contadorPartidos++;
+        }
+      });
+
+      // Renderizar Tabla General de Jugadores
+      const tbodyJugadores = document.querySelector('#tabla-jugadores tbody');
+      tbodyJugadores.innerHTML = Object.entries(statsJugadoresGlobal)
+        .sort((a, b) => b[1].pts - a[1].pts || (b[1].pf - b[1].pc) - (a[1].pf - a[1].pc))
+        .map(([nombre, s]) => `
+          <tr class="player-row" onclick="abrirModal('${nombre}')">
+            <td><strong>${nombre}</strong></td>
+            <td>${s.pj}</td>
+            <td class="win">${s.pg}</td>
+            <td class="draw">${s.pe}</td>
+            <td>${s.pp}</td>
+            <td>${s.pf}</td>
+            <td><strong>${s.pts}</strong></td>
+          </tr>`).join('');
+
+      // Renderizar Tabla de Últimos 6 Partidos
+      document.querySelector('#tabla-partidos tbody').innerHTML = listaPartidosHtml || '<tr><td colspan="5" style="text-align:center;">No hay partidos para mostrar.</td></tr>';
+    }
+
+    // LÓGICA DEL MODAL
+    function abrirModal(jugador) {
+      jugadorActivo = jugador;
+      document.getElementById('modal-titulo-jugador').textContent = `Estadísticas de ${jugador}`;
+
+      // 1. Calcular Equipo/Personaje Favorito
+      const equipos = statsJugadoresGlobal[jugador]?.equipos || {};
+      const equiposOrdenados = Object.entries(equipos).sort((a, b) => b[1].uso - a[1].uso);
+
+      if (equiposOrdenados.length > 0) {
+        const [topNombre, topStats] = equiposOrdenados[0];
+        const winRate = Math.round((topStats.pg / topStats.uso) * 100);
+        document.getElementById('modal-fav-nombre').textContent = topNombre;
+        document.getElementById('modal-fav-stats').innerHTML = `
+          <strong>${topStats.uso}</strong> partidas usadas<br>
+          <span style="color:#34d399;">${winRate}% de victorias</span>
+        `;
+      } else {
+        document.getElementById('modal-fav-nombre').textContent = 'Sin registros';
+        document.getElementById('modal-fav-stats').textContent = '-';
+      }
+
+      // 2. Poblar selector de Rivales
+      const selectRival = document.getElementById('select-rival');
+      selectRival.innerHTML = '';
+      const rivales = Object.keys(statsJugadoresGlobal).filter(j => j !== jugador);
+
+      rivales.forEach(rival => {
+        const opt = document.createElement('option');
+        opt.value = rival;
+        opt.textContent = rival;
+        selectRival.appendChild(opt);
+      });
+
+      if (rivales.length > 0) {
+        actualizarVS();
+      } else {
+        document.getElementById('tabla-vs-body').innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay suficientes jugadores para comparar.</td></tr>';
+      }
+
+      document.getElementById('modal-jugador').classList.add('active');
+    }
+
+    function actualizarVS() {
+      const rival = document.getElementById('select-rival').value;
+      if (!jugadorActivo || !rival) return;
+
+      let pj = 0, pg = 0, pe = 0, pp = 0, pf = 0;
+      let vsPartidosHtml = '';
+
+      // Filtrar todos los partidos disputados entre jugadorActivo y rival (en orden cronológico inverso)
+      [...partidosFiltradosActuales].reverse().forEach(p => {
+        const j1 = p['Jugador 1']?.trim();
+        const j2 = p['Jugador 2']?.trim();
+        
+        if ((j1 === jugadorActivo && j2 === rival) || (j1 === rival && j2 === jugadorActivo)) {
+          pj++;
+          const juego = p['Juego']?.trim() || 'General';
+          const eq1 = p['Equipo/Personaje 1']?.trim();
+          const eq2 = p['Equipo/Personaje 2']?.trim();
+          const pts1 = parseInt(p['Puntos 1']) || 0;
+          const pts2 = parseInt(p['Puntos 2']) || 0;
+          const fecha = p['Fecha'] || '-';
+
+          const esLocal = (j1 === jugadorActivo);
+          const misPts = esLocal ? pts1 : pts2;
+          const susPts = esLocal ? pts2 : pts1;
+
+          pf += misPts;
+
+          if (misPts > susPts) pg++;
+          else if (susPts > misPts) pp++;
+          else pe++;
+
+          vsPartidosHtml += `
+            <tr>
+              <td><span class="badge-date">${fecha}</span></td>
+              <td><span class="badge-game">${juego}</span></td>
+              <td><strong>${j1}</strong> ${eq1 ? `(${eq1})` : ''}</td>
+              <td style="text-align: center;"><strong>${pts1} - ${pts2}</strong></td>
+              <td><strong>${j2}</strong> ${eq2 ? `(${eq2})` : ''}</td>
+            </tr>`;
+        }
+      });
+
+      // Actualizar contadores en el modal
+      document.getElementById('vs-pj').textContent = pj;
+      document.getElementById('vs-pg').textContent = pg;
+      document.getElementById('vs-pe').textContent = pe;
+      document.getElementById('vs-pp').textContent = pp;
+      document.getElementById('vs-pf').textContent = pf;
+
+      const tbodyVS = document.getElementById('tabla-vs-body');
+      tbodyVS.innerHTML = vsPartidosHtml || '<tr><td colspan="5" style="text-align:center; color:var(--text-dim);">No hay partidos registrados entre ambos.</td></tr>';
+    }
+
+    function cerrarModal() {
+      document.getElementById('modal-jugador').classList.remove('active');
+    }
+
+    function cerrarModalAfuera(event) {
+      if (event.target.classList.contains('modal-overlay')) {
+        cerrarModal();
+      }
+    }
+
+    // Cargar al iniciar
+    cargarDatos();
+  </script>
+</body>
+</html>
